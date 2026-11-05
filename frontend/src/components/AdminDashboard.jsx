@@ -271,9 +271,22 @@ export default function AdminDashboard({ onNavigate, onSelectComplaint }) {
   const total = stats?.total_complaints || allComplaints.length;
   const queues = stats?.queues || {};
 
+  // Conflict / Inconsistency detector
+  const hasConflict = (c) => {
+    if (!c) return false;
+    if (c.conflicts && Array.isArray(c.conflicts) && c.conflicts.length > 0) return true;
+    if (typeof c.conflicts === 'string' && c.conflicts.length > 2 && c.conflicts !== '[]') return true;
+    if (c.explanation && c.explanation.includes('Validation Conflict')) return true;
+    if (c.escalation === 'ADMIN_REVIEW_REQUIRED') return true;
+    return false;
+  };
+
+  const conflictComplaints = allComplaints.filter(hasConflict);
+
   // Filter complaints according to stageFilter (Section 85)
   const filteredComplaints = allComplaints.filter(c => {
     if (stageFilter === 'ALL') return true;
+    if (stageFilter === 'CONFLICT') return hasConflict(c);
     const norm = NORMALIZE[c.status] || 'SUBMITTED';
     return norm === stageFilter;
   });
@@ -358,6 +371,28 @@ export default function AdminDashboard({ onNavigate, onSelectComplaint }) {
         </div>
 
         <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+          {/* Queue 0: Inconsistent / Needs Review */}
+          <div
+            className="stat-box"
+            style={{
+              borderLeft: conflictComplaints.length > 0 ? '4px solid #dc2626' : '4px solid #94a3b8',
+              background: conflictComplaints.length > 0 ? '#fef2f2' : '#ffffff',
+              cursor: 'pointer'
+            }}
+            onClick={() => setStageFilter('CONFLICT')}
+            title="Complaints with constraint violations or conflicting attributes requiring administrative review"
+          >
+            <span className="stat-label" style={{ color: conflictComplaints.length > 0 ? '#b91c1c' : '#64748b', fontWeight: 700 }}>
+              ⚠️ Needs Review (Inconsistent)
+            </span>
+            <div className="stat-value" style={{ color: conflictComplaints.length > 0 ? '#dc2626' : '#64748b' }}>
+              {conflictComplaints.length}
+            </div>
+            <span style={{ fontSize: '0.72rem', color: conflictComplaints.length > 0 ? '#b91c1c' : '#64748b' }}>
+              {conflictComplaints.length > 0 ? 'AI Paused • Manual Action' : 'Zero validation conflicts'}
+            </span>
+          </div>
+
           {/* Queue 1: Require Acknowledgment */}
           <div
             className="stat-box"
@@ -463,12 +498,13 @@ export default function AdminDashboard({ onNavigate, onSelectComplaint }) {
             {pendingComplaints.map((c) => {
               const recDept = c.ai_department || c.department || 'Road Maintenance';
               const normSt = NORMALIZE[c.status] || 'SUBMITTED';
+              const isConflicted = hasConflict(c);
               return (
                 <div
                   key={c.complaint_id}
                   style={{
-                    background: '#ffffff',
-                    border: '1.5px solid #ddd6fe',
+                    background: isConflicted ? '#fffbfb' : '#ffffff',
+                    border: isConflicted ? '1.5px solid #fca5a5' : '1.5px solid #ddd6fe',
                     borderRadius: '8px',
                     padding: '1rem',
                     boxShadow: 'var(--shadow-sm)'
@@ -476,12 +512,17 @@ export default function AdminDashboard({ onNavigate, onSelectComplaint }) {
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem' }}>
                     <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                         <strong style={{ fontSize: '1rem', color: '#1e3a8a' }}>#{c.complaint_id}</strong>
-                        <span style={{ fontSize: '0.82rem', color: '#64748b' }}>&bull; {c.citizen_name} ({c.phone})</span>
+                        <span style={{ fontSize: '0.82rem', color: '#64748b' }}>&bull; {c.citizen_name} {c.phone ? `(${c.phone})` : ''}</span>
                         <span className="badge" style={{ background: normSt === 'SUBMITTED' ? '#fef3c7' : '#ccfbf1', color: normSt === 'SUBMITTED' ? '#b45309' : '#0f766e', fontWeight: 700, fontSize: '0.72rem' }}>
                           {normSt === 'SUBMITTED' ? 'Stage 1: SUBMITTED' : 'Stage 2: ACKNOWLEDGED'}
                         </span>
+                        {isConflicted && (
+                          <span className="badge" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontWeight: 700, fontSize: '0.72rem' }}>
+                            ⚠️ Validation Conflict - AI Paused
+                          </span>
+                        )}
                       </div>
                       <div style={{ fontSize: '0.88rem', fontWeight: 600, color: '#0f172a', marginTop: '0.25rem' }}>
                         {c.category} &rarr; {c.issue_type} in {c.ward}
@@ -500,10 +541,16 @@ export default function AdminDashboard({ onNavigate, onSelectComplaint }) {
                       )}
                       <button
                         className="btn btn-primary"
-                        style={{ fontSize: '0.8rem', padding: '0.35rem 0.65rem', background: '#7c3aed', borderColor: '#7c3aed' }}
+                        style={{
+                          fontSize: '0.8rem',
+                          padding: '0.35rem 0.65rem',
+                          background: isConflicted ? '#dc2626' : '#7c3aed',
+                          borderColor: isConflicted ? '#b91c1c' : '#7c3aed'
+                        }}
                         onClick={() => openAcceptModal(c)}
+                        title={isConflicted ? "Resolve conflict and assign department" : "Accept complaint and notify citizen"}
                       >
-                        <Send size={14} /> 2. Accept &amp; Dispatch
+                        <Send size={14} /> {isConflicted ? '2. Reconcile & Dispatch' : '2. Accept & Dispatch'}
                       </button>
                       <button
                         className="btn btn-secondary"
@@ -514,6 +561,15 @@ export default function AdminDashboard({ onNavigate, onSelectComplaint }) {
                       </button>
                     </div>
                   </div>
+
+                  {isConflicted && (
+                    <div style={{ marginTop: '0.65rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '0.55rem 0.8rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <AlertTriangle size={16} color="#dc2626" style={{ flexShrink: 0 }} />
+                      <div style={{ fontSize: '0.8rem', color: '#991b1b', lineHeight: '1.4' }}>
+                        <strong>⚠️ Validation Conflict:</strong> {c.explanation || 'Contradictory complaint attributes detected. The AI recommendation has been paused. Please review and assign the verified department and priority.'}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -544,6 +600,7 @@ export default function AdminDashboard({ onNavigate, onSelectComplaint }) {
         <div style={{ display: 'flex', gap: '0.4rem', overflowX: 'auto', paddingBottom: '0.5rem', marginBottom: '1rem', borderBottom: '1px solid #e2e8f0' }}>
           {[
             { id: 'ALL', label: 'All Complaints', count: allComplaints.length },
+            { id: 'CONFLICT', label: '⚠️ Inconsistent / Needs Review', count: conflictComplaints.length, isWarning: true },
             { id: 'SUBMITTED', label: '1. New', count: allComplaints.filter(c => NORMALIZE[c.status] === 'SUBMITTED').length },
             { id: 'ACKNOWLEDGED', label: '2. Acknowledged', count: allComplaints.filter(c => NORMALIZE[c.status] === 'ACKNOWLEDGED').length },
             { id: 'IN_PROGRESS', label: '3. In Progress', count: allComplaints.filter(c => NORMALIZE[c.status] === 'IN_PROGRESS').length },
@@ -556,9 +613,13 @@ export default function AdminDashboard({ onNavigate, onSelectComplaint }) {
               style={{
                 fontSize: '0.8rem',
                 padding: '0.35rem 0.65rem',
-                background: stageFilter === tab.id ? '#0f766e' : '#f1f5f9',
-                color: stageFilter === tab.id ? '#ffffff' : '#334155',
-                border: 'none',
+                background: stageFilter === tab.id
+                  ? (tab.isWarning ? '#dc2626' : '#0f766e')
+                  : (tab.isWarning && tab.count > 0 ? '#fef2f2' : '#f1f5f9'),
+                color: stageFilter === tab.id
+                  ? '#ffffff'
+                  : (tab.isWarning && tab.count > 0 ? '#b91c1c' : '#334155'),
+                border: tab.isWarning && tab.count > 0 ? '1px solid #fca5a5' : 'none',
                 fontWeight: stageFilter === tab.id ? 700 : 500
               }}
               onClick={() => setStageFilter(tab.id)}
@@ -591,10 +652,31 @@ export default function AdminDashboard({ onNavigate, onSelectComplaint }) {
               <tbody>
                 {filteredComplaints.map((c) => {
                   const normSt = NORMALIZE[c.status] || 'SUBMITTED';
+                  const isConflicted = hasConflict(c);
                   return (
-                    <tr key={c.complaint_id}>
+                    <tr key={c.complaint_id} style={{ background: isConflicted ? '#fffdfd' : undefined }}>
                       <td>
                         <strong>{c.complaint_id}</strong>
+                        {isConflicted && (
+                          <div style={{ marginTop: '0.2rem' }}>
+                            <span
+                              className="badge"
+                              style={{
+                                background: '#fef2f2',
+                                color: '#dc2626',
+                                border: '1px solid #fca5a5',
+                                fontSize: '0.68rem',
+                                fontWeight: 700,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px'
+                              }}
+                              title={c.explanation || 'Validation conflict detected'}
+                            >
+                              <AlertTriangle size={11} /> Conflict
+                            </span>
+                          </div>
+                        )}
                         {c.evidence_filename && (
                           <div style={{ marginTop: '0.2rem' }}>
                             <a
@@ -637,15 +719,27 @@ export default function AdminDashboard({ onNavigate, onSelectComplaint }) {
                       <td>{getStatusBadge(c.status)}</td>
                       <td>
                         <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                          {/* If SUBMITTED -> [ACKNOWLEDGE] */}
+                          {/* If SUBMITTED -> [ACKNOWLEDGE] or [RECONCILE] */}
                           {normSt === 'SUBMITTED' && (
-                            <button
-                              className="btn btn-primary"
-                              style={{ fontSize: '0.75rem', padding: '0.25rem 0.55rem', background: '#f59e0b', borderColor: '#f59e0b', color: '#000000', fontWeight: 700 }}
-                              onClick={() => handleAcknowledge(c)}
-                            >
-                              [ACKNOWLEDGE]
-                            </button>
+                            <>
+                              <button
+                                className="btn btn-primary"
+                                style={{ fontSize: '0.75rem', padding: '0.25rem 0.55rem', background: '#f59e0b', borderColor: '#f59e0b', color: '#000000', fontWeight: 700 }}
+                                onClick={() => handleAcknowledge(c)}
+                              >
+                                [ACKNOWLEDGE]
+                              </button>
+                              {isConflicted && (
+                                <button
+                                  className="btn btn-primary"
+                                  style={{ fontSize: '0.75rem', padding: '0.25rem 0.55rem', background: '#dc2626', borderColor: '#b91c1c', color: '#ffffff', fontWeight: 700 }}
+                                  onClick={() => openAcceptModal(c)}
+                                  title="Reconcile validation conflict and assign verified department"
+                                >
+                                  [RECONCILE]
+                                </button>
+                              )}
+                            </>
                           )}
 
                           {/* If ACKNOWLEDGED -> Admin has routed to department, awaiting Officer */}
@@ -735,17 +829,28 @@ export default function AdminDashboard({ onNavigate, onSelectComplaint }) {
       {/* Accept Complaint Modal */}
       {activeModal === 'ACCEPT' && selectedComp && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div className="card" style={{ width: '560px', maxWidth: '92%', margin: 0, borderTop: '4px solid #7c3aed' }}>
+          <div className="card" style={{ width: '560px', maxWidth: '92%', margin: 0, borderTop: hasConflict(selectedComp) ? '4px solid #dc2626' : '4px solid #7c3aed' }}>
             <div className="card-header">
-              <h3 className="card-title" style={{ color: '#6d28d9' }}>Accept Grievance #{selectedComp.complaint_id}</h3>
+              <h3 className="card-title" style={{ color: hasConflict(selectedComp) ? '#dc2626' : '#6d28d9' }}>
+                {hasConflict(selectedComp) ? `⚠️ Reconcile & Dispatch #${selectedComp.complaint_id}` : `Accept Grievance #${selectedComp.complaint_id}`}
+              </h3>
               <button className="btn btn-secondary" onClick={() => setActiveModal(null)}>✕</button>
             </div>
             <form onSubmit={handleAcceptSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '0.5rem' }}>
               <div style={{ background: '#f5f3ff', padding: '0.75rem', borderRadius: '6px', fontSize: '0.85rem' }}>
-                <p><strong>Citizen:</strong> {selectedComp.citizen_name} ({selectedComp.phone})</p>
+                <p><strong>Citizen:</strong> {selectedComp.citizen_name} {selectedComp.phone ? `(${selectedComp.phone})` : ''}</p>
                 <p><strong>Location:</strong> {selectedComp.location} ({selectedComp.ward})</p>
                 <p><strong>Issue:</strong> {selectedComp.issue_type} &bull; <strong>AI Dept:</strong> {selectedComp.ai_department || selectedComp.department}</p>
               </div>
+
+              {hasConflict(selectedComp) && (
+                <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', padding: '0.75rem', borderRadius: '6px', fontSize: '0.82rem', color: '#991b1b' }}>
+                  <strong>⚠️ Reconciling Validation Conflict:</strong>
+                  <div style={{ marginTop: '0.2rem', lineHeight: '1.4' }}>
+                    {selectedComp.explanation || 'Contradictory inputs detected. The AI recommendation has been paused. Please select the verified department and priority level to resolve and dispatch this ticket.'}
+                  </div>
+                </div>
+              )}
 
               <div className="form-grid">
                 <div className="form-group">
@@ -783,8 +888,8 @@ export default function AdminDashboard({ onNavigate, onSelectComplaint }) {
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setActiveModal(null)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" style={{ background: '#7c3aed', borderColor: '#7c3aed' }} disabled={modalLoading}>
-                  {modalLoading ? 'Accepting...' : 'Accept Complaint & Notify Citizen'}
+                <button type="submit" className="btn btn-primary" style={{ background: hasConflict(selectedComp) ? '#dc2626' : '#7c3aed', borderColor: hasConflict(selectedComp) ? '#b91c1c' : '#7c3aed' }} disabled={modalLoading}>
+                  {modalLoading ? 'Dispatching...' : hasConflict(selectedComp) ? 'Reconcile Conflict & Dispatch' : 'Accept Complaint & Notify Citizen'}
                 </button>
               </div>
             </form>

@@ -63,12 +63,29 @@ class GrievanceAgent:
                 if any("severity=LOW" in c.get("conflicting_elements", []) for c in blocking_conflicts)
                 else f"Validation Conflict: {blocking_conflicts[0]['description']} The AI recommendation has been paused and the complaint requires administrative review."
             )
+            # Candidate department from KB capability table
+            kb_dept = self.kb.find_department_for_issue(request.issue_type)
+            derived_dept = kb_dept["name"] if kb_dept else "General Civic Administration"
+            derived_priority = "HIGH" if (request.immediate_danger == "YES" or request.emergency) else "MEDIUM"
+
+            trace = [
+                ReasoningStep(
+                    step_order=1,
+                    step_type="VALIDATION_CONFLICT",
+                    derived_fact={"status": "PAUSED", "reason": conflict_msg},
+                    explanation=conflict_msg
+                )
+            ]
             return {
-                "success": False,
-                "error": conflict_msg,
-                "explanation": conflict_msg,
+                "success": True,
+                "is_paused": True,
+                "department": derived_dept,
+                "priority": derived_priority,
+                "escalation": "ADMIN_REVIEW_REQUIRED",
                 "conflicts": detected_conflicts,
-                "missing_info": []
+                "missing_info": [],
+                "reasoning_trace": [s.to_dict() for s in trace],
+                "explanation": conflict_msg
             }
 
         # Step 4: Forward Chaining Inference Loop (Routing & Preliminary Facts)

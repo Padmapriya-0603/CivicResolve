@@ -192,25 +192,27 @@ export default function ComplaintForm({ onComplaintSubmitted }) {
     setLoading(true);
 
     try {
-      // 1. Client-Side CSP validation call
-      const validation = await api.validateComplaint({
-        category: formData.category,
-        issue_type: formData.issue_type,
-        duration_days: Number(formData.duration_days),
-        affected_people: Number(formData.affected_people),
-        severity: formData.severity,
-        safety_risk: formData.safety_risk,
-        emergency: formData.emergency || formData.immediate_danger === 'YES',
-        frequency: formData.frequency,
-      });
+      // 1. Client-Side CSP validation check (informational; conflicts are submitted for Admin Review)
+      try {
+        const validation = await api.validateComplaint({
+          category: formData.category,
+          issue_type: formData.issue_type,
+          duration_days: formData.duration_days === '' ? null : Number(formData.duration_days),
+          affected_people: formData.affected_people === '' ? null : Number(formData.affected_people),
+          severity: formData.severity,
+          safety_risk: formData.safety_risk,
+          emergency: formData.emergency || formData.immediate_danger === 'YES',
+          frequency: formData.frequency,
+        });
 
-      if (!validation.valid) {
-        setValidationErrors(validation.violations);
-        setLoading(false);
-        return;
+        if (!validation.valid) {
+          setValidationErrors(validation.violations || []);
+        }
+      } catch (valErr) {
+        // Silently continue to submission
       }
 
-      // 2. Submit Complaint to backend
+      // 2. Submit Complaint to backend (Inconsistencies are accepted and flagged for Admin Review)
       const payload = {
         ...formData,
         emergency: formData.emergency || formData.immediate_danger === 'YES',
@@ -247,10 +249,10 @@ export default function ComplaintForm({ onComplaintSubmitted }) {
       {liveCspStatus.checked && !liveCspStatus.valid && (
         <div
           style={{
-            padding: '0.75rem 1rem',
-            borderRadius: '6px',
+            padding: '0.85rem 1.1rem',
+            borderRadius: '8px',
             marginBottom: '1.25rem',
-            border: '1px solid #fca5a5',
+            border: '1.5px solid #fca5a5',
             background: '#fef2f2',
             display: 'flex',
             alignItems: 'center',
@@ -259,14 +261,17 @@ export default function ComplaintForm({ onComplaintSubmitted }) {
             gap: '0.75rem'
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <AlertCircle size={20} color="#dc2626" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1 }}>
+            <AlertCircle size={22} color="#dc2626" style={{ flexShrink: 0 }} />
             <div>
-              <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#991b1b' }}>
-                Constraint Inconsistency Detected
+              <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#991b1b' }}>
+                Constraint Inconsistency Detected — Queued for Administrative Review
               </div>
-              <div style={{ fontSize: '0.78rem', color: '#b91c1c' }}>
+              <div style={{ fontSize: '0.82rem', color: '#b91c1c', marginTop: '0.2rem', lineHeight: '1.4' }}>
                 {liveCspStatus.violations.join(' | ')}
+              </div>
+              <div style={{ fontSize: '0.78rem', color: '#7f1d1d', marginTop: '0.3rem', fontWeight: 500 }}>
+                💡 You can still submit this grievance! The AI recommendation has been paused, and the ticket will be reviewed and reconciled directly by the Municipal Administrator.
               </div>
             </div>
           </div>
@@ -275,10 +280,11 @@ export default function ComplaintForm({ onComplaintSubmitted }) {
             style={{
               background: '#dc2626',
               color: '#ffffff',
-              fontSize: '0.75rem'
+              fontSize: '0.75rem',
+              fontWeight: 700
             }}
           >
-            INCONSISTENCY
+            ⚠️ ADMIN REVIEW
           </span>
         </div>
       )}
@@ -748,9 +754,18 @@ export default function ComplaintForm({ onComplaintSubmitted }) {
             type="submit"
             className="btn btn-primary"
             disabled={loading}
-            style={{ minWidth: '180px' }}
+            style={{
+              minWidth: '220px',
+              background: (liveCspStatus.checked && !liveCspStatus.valid) ? '#dc2626' : undefined,
+              borderColor: (liveCspStatus.checked && !liveCspStatus.valid) ? '#b91c1c' : undefined,
+              boxShadow: (liveCspStatus.checked && !liveCspStatus.valid) ? '0 0 10px rgba(220, 38, 38, 0.35)' : undefined
+            }}
           >
-            {loading ? 'Submitting Grievance...' : 'Submit Grievance'}
+            {loading
+              ? 'Submitting Grievance...'
+              : (liveCspStatus.checked && !liveCspStatus.valid)
+                ? 'Submit for Administrative Review'
+                : 'Submit Grievance'}
           </button>
         </div>
       </form>

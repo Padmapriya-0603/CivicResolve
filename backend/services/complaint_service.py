@@ -130,21 +130,57 @@ class ComplaintService:
         # 1. Constraint Satisfaction Problem Validation (Sections 8, 9, 10)
         req_dict = req.model_dump()
         csp_res = csp_solver.validate_and_solve(req_dict)
-        if not csp_res.is_valid:
-            raise ValueError(f"Constraint Satisfaction Failure: {' | '.join(csp_res.violations)}")
 
         # 2. Grievance Agent Processing (Forward Chaining + Rule Deduction)
         reasoning_res = self.agent.process_grievance(req)
-        if not reasoning_res.get("success", False):
-            raise ValueError(reasoning_res.get("error", "Reasoning processing failed."))
 
-        dept = reasoning_res.get("department") or csp_res.inferred_department or "General Civic Administration"
-        priority = reasoning_res.get("priority", "LOW")
-        escalation = reasoning_res.get("escalation", "NO_ESCALATION")
-        conflicts = reasoning_res.get("conflicts", [])
-        missing_info = reasoning_res.get("missing_info", [])
-        trace = reasoning_res.get("reasoning_trace", [])
-        explanation = reasoning_res.get("explanation", "") or csp_res.explanation
+        # Check for validation / domain conflicts (e.g. Danger=YES with Severity=LOW)
+        has_validation_conflict = (
+            (not csp_res.is_valid)
+            or reasoning_res.get("is_paused", False)
+            or (not reasoning_res.get("success", True))
+        )
+
+        if has_validation_conflict:
+            if (req.immediate_danger == "YES" or req.emergency) and str(req.severity).upper() == "LOW":
+                explanation = (
+                    "Validation Conflict: Immediate Danger is marked Yes, but the selected severity is Low, "
+                    "which violates the defined constraint. The AI recommendation has been paused and the complaint "
+                    "requires administrative review."
+                )
+            elif csp_res.violations:
+                explanation = " | ".join(csp_res.violations)
+            else:
+                explanation = reasoning_res.get("explanation") or "Validation conflict detected. AI recommendation paused for administrative review."
+
+            dept = csp_res.inferred_department or reasoning_res.get("department") or "General Civic Administration"
+            priority = "HIGH" if (req.immediate_danger == "YES" or req.emergency) else "MEDIUM"
+            escalation = "ADMIN_REVIEW_REQUIRED"
+            conflicts = reasoning_res.get("conflicts", [])
+            if not conflicts and csp_res.violations:
+                conflicts = [{
+                    "conflict_type": "VALIDATION_CONFLICT",
+                    "description": v,
+                    "resolution": "AI recommendation paused. Requires Administrative Review.",
+                    "is_blocking": True
+                } for v in csp_res.violations]
+            missing_info = reasoning_res.get("missing_info", [])
+            trace = reasoning_res.get("reasoning_trace", [])
+            if not trace:
+                trace = [{
+                    "step_order": 1,
+                    "step_type": "VALIDATION_CONFLICT",
+                    "derived_fact": {"status": "PAUSED", "reason": explanation},
+                    "explanation": explanation
+                }]
+        else:
+            dept = reasoning_res.get("department") or csp_res.inferred_department or "General Civic Administration"
+            priority = reasoning_res.get("priority", "LOW")
+            escalation = reasoning_res.get("escalation", "NO_ESCALATION")
+            conflicts = reasoning_res.get("conflicts", [])
+            missing_info = reasoning_res.get("missing_info", [])
+            trace = reasoning_res.get("reasoning_trace", [])
+            explanation = reasoning_res.get("explanation", "") or csp_res.explanation
 
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -218,6 +254,11 @@ class ComplaintService:
             ))
 
         # 6. Status History Record
+        history_note = (
+            "Grievance submitted with validation conflict. AI recommendation paused; awaiting municipal administrative review."
+            if has_validation_conflict
+            else "Grievance submitted by citizen. Awaiting administrative review."
+        )
         cursor.execute("""
             INSERT INTO status_history (complaint_id, previous_status, new_status, changed_by, notes)
             VALUES (?, ?, ?, ?, ?)
@@ -226,15 +267,20 @@ class ComplaintService:
             None,
             "SUBMITTED",
             req.citizen_name or "Citizen",
-            "Grievance submitted by citizen. Awaiting administrative review."
+            history_note
         ))
 
         # 7. Timeline Record (Section 88)
+        timeline_msg = (
+            "Complaint submitted with validation conflict. Queued for municipal administrative review."
+            if has_validation_conflict
+            else "Complaint submitted by citizen."
+        )
         add_timeline_entry(
             conn=conn,
             complaint_id=complaint_id,
             status="SUBMITTED",
-            message="Complaint submitted by citizen.",
+            message=timeline_msg,
             action_by=req.citizen_name or "Citizen",
             action_by_role="CITIZEN",
             message_type="SYSTEM"
@@ -242,12 +288,18 @@ class ComplaintService:
 
         # 8. Citizen In-App Notification (Section 89)
         if citizen_id:
+            notif_title = "Complaint Submitted (Admin Review)" if has_validation_conflict else "Complaint Submitted"
+            notif_msg = (
+                f"Complaint #{complaint_id} has been submitted with a validation conflict and queued for administrative review."
+                if has_validation_conflict
+                else f"Complaint #{complaint_id} has been submitted successfully."
+            )
             add_notification(
                 conn=conn,
                 user_id=citizen_id,
                 complaint_id=complaint_id,
-                title="Complaint Submitted",
-                message=f"Complaint #{complaint_id} has been submitted successfully.",
+                title=notif_title,
+                message=notif_msg,
                 n_type="SUBMITTED"
             )
 
@@ -256,12 +308,12 @@ class ComplaintService:
 
         # Audit log creation
         audit_service.log_event(
-            action="COMPLAINT_CREATED",
+            action="COMPLAINT_CREATED_WITH_CONFLICT" if has_validation_conflict else "COMPLAINT_CREATED",
             entity_type="COMPLAINT",
             user_id=citizen_id,
             user_email=req.email,
             entity_id=complaint_id,
-            new_value=f"Dept: {dept}, Priority: {priority}, Status: SUBMITTED"
+            new_value=f"Dept: {dept}, Priority: {priority}, Conflict: {has_validation_conflict}, Status: SUBMITTED"
         )
 
         return self.get_complaint_by_id(complaint_id)
