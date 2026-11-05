@@ -582,14 +582,16 @@ def update_status(
 def acknowledge_complaint(
     id: str,
     payload: Optional[AcknowledgeRequest] = None,
-    current_user: Dict[str, Any] = Depends(require_admin)
+    current_user: Dict[str, Any] = Depends(require_officer_or_admin)
 ):
     """
-    Stage 1 -> 2: Admin acknowledges newly submitted complaint (Section 74).
+    Stage 1 -> 2: Respective Department Officer or Admin acknowledges newly submitted complaint.
     """
     try:
         notes = payload.notes if payload else None
         return complaint_service.acknowledge_complaint(id, notes, current_user)
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except ValueError as e:
         status_code = status.HTTP_404_NOT_FOUND if "not found" in str(e).lower() else status.HTTP_400_BAD_REQUEST
         raise HTTPException(status_code=status_code, detail=str(e))
@@ -692,14 +694,16 @@ def inform_user(
 def close_complaint(
     id: str,
     payload: Optional[CloseComplaintRequest] = None,
-    current_user: Dict[str, Any] = Depends(require_admin)
+    current_user: Dict[str, Any] = Depends(require_officer_or_admin)
 ):
     """
-    Stage 6 -> 7: Admin formally closes complaint (Section 81).
+    Stage 4 -> 5: Respective Department Officer or Admin formally closes complaint.
     """
     try:
         msg = payload.closure_message if payload else None
         return complaint_service.close_complaint(id, msg, current_user)
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except ValueError as e:
         status_code = status.HTTP_404_NOT_FOUND if "not found" in str(e).lower() else status.HTTP_400_BAD_REQUEST
         raise HTTPException(status_code=status_code, detail=str(e))
@@ -710,9 +714,9 @@ def close_complaint(
 def admin_acknowledge_complaint(
     id: str,
     payload: Optional[AcknowledgeRequest] = None,
-    current_user: Dict[str, Any] = Depends(require_admin)
+    current_user: Dict[str, Any] = Depends(require_officer_or_admin)
 ):
-    """POST alias: Admin acknowledges complaint (Section 42)."""
+    """POST alias: Officer or Admin acknowledges complaint (Section 42)."""
     return acknowledge_complaint(id=id, payload=payload, current_user=current_user)
 
 
@@ -774,9 +778,9 @@ def admin_inform_user(
 def admin_close_complaint(
     id: str,
     payload: Optional[CloseComplaintRequest] = None,
-    current_user: Dict[str, Any] = Depends(require_admin)
+    current_user: Dict[str, Any] = Depends(require_officer_or_admin)
 ):
-    """POST alias: Admin closes complaint (Section 42)."""
+    """POST alias: Officer or Admin closes complaint (Section 42)."""
     return close_complaint(id=id, payload=payload, current_user=current_user)
 
 

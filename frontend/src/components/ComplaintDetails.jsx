@@ -300,18 +300,18 @@ export default function ComplaintDetails({ complaintId, onBack }) {
           </div>
 
           <div style={{ padding: '0.5rem 0' }}>
-            {/* STAGE 1: SUBMITTED -> Show [ACKNOWLEDGE] for Admin */}
+            {/* STAGE 1: SUBMITTED -> Show [ACKNOWLEDGE] for Officer or Admin */}
             {status === 'SUBMITTED' && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                 <div>
                   <h4 style={{ margin: 0, color: '#0f172a', fontSize: '0.95rem' }}>Step 1: Acknowledge Receipt</h4>
                   <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: '#64748b' }}>
-                    {isAdmin
-                      ? <>Confirm receipt of this citizen grievance to advance to <strong>ACKNOWLEDGED</strong>.</>
-                      : <>Grievance logged. Pending Municipal Administrator review and formal acknowledgement.</>}
+                    {(isOfficer || isAdmin)
+                      ? <>Confirm receipt of this grievance for <strong>{complaint.department || 'the assigned department'}</strong> to advance to <strong>ACKNOWLEDGED</strong>.</>
+                      : <>Grievance logged. Pending department review and formal acknowledgement.</>}
                   </p>
                 </div>
-                {isAdmin ? (
+                {(isOfficer || isAdmin) ? (
                   <button
                     className="btn btn-primary"
                     style={{ background: '#0f766e', borderColor: '#0f766e', fontWeight: 700 }}
@@ -320,7 +320,7 @@ export default function ComplaintDetails({ complaintId, onBack }) {
                     <Check size={16} /> Acknowledge Complaint
                   </button>
                 ) : (
-                  <span className="badge badge-med">Pending Admin Acknowledgment</span>
+                  <span className="badge badge-med">Pending Acknowledgment</span>
                 )}
               </div>
             )}
@@ -390,30 +390,30 @@ export default function ComplaintDetails({ complaintId, onBack }) {
               </div>
             )}
 
-            {/* STAGE 4: RESOLVED / WORK_COMPLETED / USER_INFORMED -> Admin Verifies and Closes */}
+            {/* STAGE 4: RESOLVED / WORK_COMPLETED / USER_INFORMED -> Officer or Admin Verifies and Closes */}
             {['WORK_COMPLETED', 'USER_INFORMED', 'RESOLVED'].includes(status) && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                 <div>
                   <h4 style={{ margin: 0, color: '#0f172a', fontSize: '0.95rem' }}>Step 4: Verification &amp; Formal Closure</h4>
                   <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: '#64748b' }}>
-                    {isAdmin
-                      ? 'Work has been completed and marked resolved by the Department Officer. Verify field remediation and formally close ticket.'
-                      : 'Field work completed and marked resolved. Waiting for Municipal Administrator verification and formal closure.'}
+                    {(isOfficer || isAdmin)
+                      ? 'Work has been completed and marked resolved. Confirm field remediation and formally close ticket.'
+                      : 'Field work completed and marked resolved. Waiting for formal closure.'}
                   </p>
                 </div>
-                {isAdmin ? (
+                {(isOfficer || isAdmin) ? (
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <button
                       className="btn btn-primary"
                       style={{ background: '#334155', borderColor: '#334155', fontWeight: 700 }}
                       onClick={() => setActiveModal('CLOSE')}
                     >
-                      <Lock size={16} /> Verify &amp; Close Complaint
+                      <Lock size={16} /> Close Complaint
                     </button>
                   </div>
                 ) : (
                   <span className="badge badge-low" style={{ background: '#dcfce7', color: '#15803d', fontWeight: 700, padding: '0.4rem 0.75rem', border: '1px solid #86efac' }}>
-                    ✓ Work Resolved &bull; Pending Admin Closure
+                    ✓ Work Resolved &bull; Pending Closure
                   </span>
                 )}
               </div>

@@ -502,16 +502,24 @@ class ComplaintService:
         current_user: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Stage Transition 1 -> 2: SUBMITTED -> ACKNOWLEDGED (Section 74).
-        Admin acknowledges receipt of grievance.
+        Stage Transition 1 -> 2: SUBMITTED -> ACKNOWLEDGED.
+        Respective department officer or admin acknowledges receipt of grievance.
         """
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT citizen_id, status FROM complaints WHERE complaint_id = ?", (complaint_id,))
+        cursor.execute("SELECT citizen_id, status, department FROM complaints WHERE complaint_id = ?", (complaint_id,))
         curr = cursor.fetchone()
         if not curr:
             conn.close()
             raise ValueError(f"Complaint '{complaint_id}' not found.")
+
+        # RBAC Check: Department Officer can only acknowledge complaints assigned to their department
+        if current_user and current_user.get("role") == "DEPARTMENT_OFFICER":
+            officer_dept = current_user.get("department_name")
+            comp_dept = curr["department"]
+            if not officer_dept or not comp_dept or comp_dept.strip().lower() != officer_dept.strip().lower():
+                conn.close()
+                raise PermissionError(f"Access Denied: Complaint #{complaint_id} is assigned to '{comp_dept or 'Unassigned'}', not your department ('{officer_dept or 'None'}').")
 
         current_st = normalize_status(curr["status"])
         if current_st != "SUBMITTED":
@@ -522,8 +530,10 @@ class ComplaintService:
             )
 
         now_str = datetime.now().isoformat()
-        admin_name = current_user.get("name", "Administrator")
-        msg = notes or "Complaint acknowledged by administration."
+        user_name = current_user.get("name", "Department Officer" if current_user.get("role") == "DEPARTMENT_OFFICER" else "Administrator")
+        user_role = current_user.get("role", "DEPARTMENT_OFFICER")
+        dept_name = current_user.get("department_name") or curr["department"] or "department"
+        msg = notes or f"Complaint received and acknowledged by {dept_name}."
 
         cursor.execute("""
             UPDATE complaints SET status = 'ACKNOWLEDGED', updated_at = ?
@@ -533,15 +543,15 @@ class ComplaintService:
         cursor.execute("""
             INSERT INTO status_history (complaint_id, previous_status, new_status, changed_by, notes)
             VALUES (?, 'SUBMITTED', 'ACKNOWLEDGED', ?, ?)
-        """, (complaint_id, admin_name, msg))
+        """, (complaint_id, user_name, msg))
 
         add_timeline_entry(
             conn=conn,
             complaint_id=complaint_id,
             status="ACKNOWLEDGED",
             message=msg,
-            action_by=admin_name,
-            action_by_role="ADMIN",
+            action_by=user_name,
+            action_by_role=user_role,
             message_type="ACKNOWLEDGEMENT"
         )
 
@@ -1045,16 +1055,24 @@ class ComplaintService:
         current_user: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Stage Transition 6 -> 7: USER_INFORMED -> CLOSED (Section 81).
-        Formally closes complaint after confirmation. Read-only for normal users.
+        Stage Transition 4 -> 5: RESOLVED -> CLOSED.
+        Respective department officer or admin formally closes complaint.
         """
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT citizen_id, status FROM complaints WHERE complaint_id = ?", (complaint_id,))
+        cursor.execute("SELECT citizen_id, status, department FROM complaints WHERE complaint_id = ?", (complaint_id,))
         curr = cursor.fetchone()
         if not curr:
             conn.close()
             raise ValueError(f"Complaint '{complaint_id}' not found.")
+
+        # RBAC Check: Department Officer can only close complaints assigned to their department
+        if current_user and current_user.get("role") == "DEPARTMENT_OFFICER":
+            officer_dept = current_user.get("department_name")
+            comp_dept = curr["department"]
+            if not officer_dept or not comp_dept or comp_dept.strip().lower() != officer_dept.strip().lower():
+                conn.close()
+                raise PermissionError(f"Access Denied: Complaint #{complaint_id} is assigned to '{comp_dept or 'Unassigned'}', not your department ('{officer_dept or 'None'}').")
 
         current_st = normalize_status(curr["status"])
         if current_st not in ("USER_INFORMED", "RESOLVED", "WORK_COMPLETED"):
@@ -1065,27 +1083,29 @@ class ComplaintService:
             )
 
         now_str = datetime.now().isoformat()
-        admin_name = current_user.get("name", "Administrator")
-        clean_msg = (closure_message and closure_message.strip()) or "Complaint lifecycle formally closed by administration."
+        user_name = current_user.get("name", "Department Officer" if current_user.get("role") == "DEPARTMENT_OFFICER" else "Administrator")
+        user_role = current_user.get("role", "DEPARTMENT_OFFICER")
+        dept_name = current_user.get("department_name") or curr["department"] or "department"
+        clean_msg = (closure_message and closure_message.strip()) or f"Complaint lifecycle formally closed by {dept_name}."
 
         cursor.execute("""
             UPDATE complaints
             SET status = 'CLOSED', closure_message = ?, closed_by = ?, closed_at = ?, updated_at = ?
             WHERE complaint_id = ?
-        """, (clean_msg, admin_name, now_str, now_str, complaint_id))
+        """, (clean_msg, user_name, now_str, now_str, complaint_id))
 
         cursor.execute("""
             INSERT INTO status_history (complaint_id, previous_status, new_status, changed_by, notes)
-            VALUES (?, 'USER_INFORMED', 'CLOSED', ?, ?)
-        """, (complaint_id, admin_name, clean_msg))
+            VALUES (?, 'RESOLVED', 'CLOSED', ?, ?)
+        """, (complaint_id, user_name, clean_msg))
 
         add_timeline_entry(
             conn=conn,
             complaint_id=complaint_id,
             status="CLOSED",
             message=clean_msg,
-            action_by=admin_name,
-            action_by_role="ADMIN",
+            action_by=user_name,
+            action_by_role=user_role,
             message_type="CLOSURE"
         )
 

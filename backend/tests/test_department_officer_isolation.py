@@ -305,3 +305,45 @@ def test_department_officer_complaint_isolation(client):
     )
     assert valid_complete.status_code == 200
     assert valid_complete.json()["status"] == "WORK_COMPLETED"
+
+    # 10. Department Officer Acknowledge Tests
+    # Water Officer attempts to ACKNOWLEDGE Water complaint -> 200 OK
+    valid_ack = client.put(
+        f"/api/complaints/{comp_water['complaint_id']}/acknowledge",
+        json={"notes": "Water department acknowledged."},
+        headers={"Authorization": f"Bearer {water_token}"}
+    )
+    assert valid_ack.status_code == 200
+    assert valid_ack.json()["status"] == "ACKNOWLEDGED"
+
+    # Roads Officer attempts to ACKNOWLEDGE Sanitation complaint -> 403 Forbidden
+    cross_ack = client.put(
+        f"/api/complaints/{comp_sanitation['complaint_id']}/acknowledge",
+        json={"notes": "Roads team attempting unauthorized ack"},
+        headers={"Authorization": f"Bearer {roads_token}"}
+    )
+    assert cross_ack.status_code == 403
+    assert "Access Denied" in cross_ack.json()["detail"]
+
+    # 11. Department Officer Close Tests
+    # Water Officer attempts to CLOSE Roads complaint -> 403 Forbidden
+    cross_close = client.put(
+        f"/api/complaints/{comp_roads['complaint_id']}/close",
+        json={"closure_message": "Water team attempting unauthorized close"},
+        headers={"Authorization": f"Bearer {water_token}"}
+    )
+    assert cross_close.status_code == 403
+    assert "Access Denied" in cross_close.json()["detail"]
+
+    # Legitimate Roads Officer CLOSES Roads complaint -> 200 OK
+    valid_close = client.put(
+        f"/api/complaints/{comp_roads['complaint_id']}/close",
+        json={"closure_message": "Roads department formally closes ticket."},
+        headers={"Authorization": f"Bearer {roads_token}"}
+    )
+    assert valid_close.status_code == 200
+    assert valid_close.json()["status"] == "CLOSED"
+
+    # 12. Verify Admin phone is removed
+    admin_profile = client.get("/api/auth/me", headers={"Authorization": f"Bearer {admin_token}"}).json()
+    assert admin_profile.get("phone") is None

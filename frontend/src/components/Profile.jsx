@@ -15,7 +15,7 @@ export default function Profile() {
     setSaving(true);
     setSuccessMsg('');
     try {
-      await api.updateProfile({ name, phone });
+      await api.updateProfile({ name, phone: user?.role === 'ADMIN' ? null : phone });
       await refreshUser();
       setSuccessMsg('Profile updated successfully.');
     } catch (err) {
@@ -95,16 +95,18 @@ export default function Profile() {
             />
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Phone Number</label>
-            <input
-              type="text"
-              className="form-input"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="e.g. +91 98765 43210"
-            />
-          </div>
+          {user?.role !== 'ADMIN' && (
+            <div className="form-group">
+              <label className="form-label">Phone Number</label>
+              <input
+                type="text"
+                className="form-input"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="e.g. +91 98765 43210"
+              />
+            </div>
+          )}
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
             <button type="submit" className="btn btn-primary" disabled={saving}>

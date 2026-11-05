@@ -206,7 +206,7 @@ export default function UserManagement() {
                 <td><strong>#{u.id}</strong></td>
                 <td>
                   <div style={{ fontWeight: 600 }}>{u.name}</div>
-                  <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{u.phone || 'No phone'}</div>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{u.role === 'ADMIN' ? '' : (u.phone || 'No phone')}</div>
                 </td>
                 <td>{u.email}</td>
                 <td>{getRoleBadge(u.role)}</td>

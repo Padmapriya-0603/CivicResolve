@@ -16,7 +16,8 @@ import {
   Send,
   Check,
   Search,
-  ExternalLink
+  ExternalLink,
+  Lock
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
@@ -48,11 +49,11 @@ export default function OfficerDashboard({ onSelectComplaint }) {
 
   // Filters & Search
   const [priorityFilter, setPriorityFilter] = useState('');
-  const [stageFilter, setStageFilter] = useState('ALL'); // ALL, ACKNOWLEDGED, IN_PROGRESS, RESOLVED, CLOSED
+  const [stageFilter, setStageFilter] = useState('ALL'); // ALL, SUBMITTED, ACKNOWLEDGED, IN_PROGRESS, RESOLVED, CLOSED
   const [searchQuery, setSearchQuery] = useState('');
 
   // Modals for Officer Responsibilities
-  const [activeModal, setActiveModal] = useState(null); // 'START_WORK', 'PROGRESS_UPDATE', 'RESOLVE'
+  const [activeModal, setActiveModal] = useState(null); // 'ACK', 'START_WORK', 'PROGRESS_UPDATE', 'RESOLVE', 'CLOSE'
   const [selectedComp, setSelectedComp] = useState(null);
   const [actionMessage, setActionMessage] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
@@ -79,6 +80,25 @@ export default function OfficerDashboard({ onSelectComplaint }) {
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     loadData();
+  };
+
+  // 0. Acknowledge Receipt (Stage 1 -> Stage 2)
+  const handleAcknowledgeSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedComp) return;
+    setActionLoading(true);
+    try {
+      await api.acknowledgeComplaint(selectedComp.complaint_id, actionMessage || undefined);
+      setActiveModal(null);
+      setSelectedComp(null);
+      setActionMessage('');
+      alert('Complaint acknowledged successfully by your department!');
+      loadData();
+    } catch (err) {
+      alert(`Failed to acknowledge complaint: ${err.response?.data?.detail || err.message}`);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   // 1. Accept / Start Work (Stage 2 -> Stage 3)
@@ -135,10 +155,30 @@ export default function OfficerDashboard({ onSelectComplaint }) {
       setActiveModal(null);
       setSelectedComp(null);
       setActionMessage('');
-      alert('Complaint marked RESOLVED! Municipal administration notified for formal verification and closure.');
+      alert('Complaint marked RESOLVED!');
       loadData();
     } catch (err) {
       alert(`Failed to resolve complaint: ${err.response?.data?.detail || err.message}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // 4. Formally Close Complaint (Stage 4 -> Stage 5)
+  const handleCloseSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedComp) return;
+    if (!window.confirm(`Are you sure you want to formally close complaint #${selectedComp.complaint_id}?`)) return;
+    setActionLoading(true);
+    try {
+      await api.closeComplaint(selectedComp.complaint_id, actionMessage || undefined);
+      setActiveModal(null);
+      setSelectedComp(null);
+      setActionMessage('');
+      alert('Complaint has been formally closed.');
+      loadData();
+    } catch (err) {
+      alert(`Failed to close complaint: ${err.response?.data?.detail || err.message}`);
     } finally {
       setActionLoading(false);
     }
@@ -148,13 +188,16 @@ export default function OfficerDashboard({ onSelectComplaint }) {
   const totalAssigned = complaints.length;
   const critical = complaints.filter(c => c.priority === 'CRITICAL').length;
   const high = complaints.filter(c => c.priority === 'HIGH').length;
+  const stage1Count = complaints.filter(c => NORMALIZE[c.status] === 'SUBMITTED').length;
   const stage2Count = complaints.filter(c => ['ACKNOWLEDGED', 'ACCEPTED', 'Under Review', 'Assigned'].includes(c.status)).length;
   const inProgressCount = complaints.filter(c => ['IN_PROGRESS', 'In Progress'].includes(c.status)).length;
-  const resolvedCount = complaints.filter(c => ['RESOLVED', 'Resolved', 'WORK_COMPLETED', 'Work Completed', 'CLOSED', 'Closed'].includes(c.status)).length;
+  const resolvedCount = complaints.filter(c => ['RESOLVED', 'Resolved', 'WORK_COMPLETED', 'Work Completed'].includes(c.status)).length;
+  const closedCount = complaints.filter(c => ['CLOSED', 'Closed'].includes(c.status)).length;
 
   // Filter complaints based on Stage Tab
   const filteredComplaints = complaints.filter(c => {
     const norm = NORMALIZE[c.status] || 'SUBMITTED';
+    if (stageFilter === 'SUBMITTED') return norm === 'SUBMITTED';
     if (stageFilter === 'ACKNOWLEDGED') return norm === 'ACKNOWLEDGED';
     if (stageFilter === 'IN_PROGRESS') return norm === 'IN_PROGRESS';
     if (stageFilter === 'RESOLVED') return norm === 'RESOLVED';
@@ -219,6 +262,12 @@ export default function OfficerDashboard({ onSelectComplaint }) {
           <span style={{ fontSize: '0.75rem', color: '#64748b' }}>In {user?.department_name || 'department'}</span>
         </div>
 
+        <div className="stat-box" style={{ borderLeft: '4px solid #0f766e' }}>
+          <span className="stat-label">Awaiting Ack</span>
+          <div className="stat-value" style={{ color: '#0f766e' }}>{stage1Count}</div>
+          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Stage 1: Submitted</span>
+        </div>
+
         <div className="stat-box" style={{ borderLeft: '4px solid #0284c7' }}>
           <span className="stat-label">Ready for Field Work</span>
           <div className="stat-value" style={{ color: '#0284c7' }}>{stage2Count}</div>
@@ -270,6 +319,13 @@ export default function OfficerDashboard({ onSelectComplaint }) {
             onClick={() => setStageFilter('ALL')}
           >
             All Assigned ({complaints.length})
+          </button>
+          <button
+            className={`btn ${stageFilter === 'SUBMITTED' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}
+            onClick={() => setStageFilter('SUBMITTED')}
+          >
+            Stage 1: New ({stage1Count})
           </button>
           <button
             className={`btn ${stageFilter === 'ACKNOWLEDGED' ? 'btn-primary' : 'btn-secondary'}`}
@@ -447,24 +503,42 @@ export default function OfficerDashboard({ onSelectComplaint }) {
                             </>
                           )}
 
-                          {/* Stage 4: Resolved */}
+                          {/* Stage 1: Submitted -> Acknowledge */}
+                          {normSt === 'SUBMITTED' && (
+                            <button
+                              className="btn btn-primary"
+                              style={{ fontSize: '0.74rem', padding: '0.25rem 0.55rem', background: '#0f766e', borderColor: '#0f766e', fontWeight: 700 }}
+                              onClick={() => {
+                                setSelectedComp(c);
+                                setActionMessage('Complaint received and acknowledged by department.');
+                                setActiveModal('ACK');
+                              }}
+                              title="Acknowledge receipt of grievance for your department"
+                            >
+                              <Check size={13} /> Acknowledge
+                            </button>
+                          )}
+
+                          {/* Stage 4: Resolved -> Close Complaint */}
                           {normSt === 'RESOLVED' && (
-                            <span style={{ fontSize: '0.74rem', color: '#15803d', fontWeight: 600 }}>
-                              ✓ Awaiting Admin Closure
-                            </span>
+                            <button
+                              className="btn btn-primary"
+                              style={{ fontSize: '0.74rem', padding: '0.25rem 0.55rem', background: '#334155', borderColor: '#334155', fontWeight: 700 }}
+                              onClick={() => {
+                                setSelectedComp(c);
+                                setActionMessage('Field remediation verified and complaint formally closed.');
+                                setActiveModal('CLOSE');
+                              }}
+                              title="Formally close this resolved complaint"
+                            >
+                              <Lock size={13} /> Close Complaint
+                            </button>
                           )}
 
                           {/* Stage 5: Closed */}
                           {normSt === 'CLOSED' && (
                             <span style={{ fontSize: '0.74rem', color: '#64748b' }}>
                               Archived &bull; Closed
-                            </span>
-                          )}
-
-                          {/* Stage 1: Submitted */}
-                          {normSt === 'SUBMITTED' && (
-                            <span style={{ fontSize: '0.74rem', color: '#92400e' }}>
-                              Awaiting Admin Ack
                             </span>
                           )}
                         </div>
@@ -491,6 +565,42 @@ export default function OfficerDashboard({ onSelectComplaint }) {
       {/* ============================================================== */}
       {/* OFFICER INTERACTIVE ACTION MODALS */}
       {/* ============================================================== */}
+
+      {/* Modal 0: Acknowledge Complaint (Stage 1 -> Stage 2) */}
+      {activeModal === 'ACK' && selectedComp && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
+          <div className="card" style={{ width: '520px', maxWidth: '100%', margin: 0 }}>
+            <div className="card-header">
+              <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', color: '#0f766e' }}>
+                <Check size={18} color="#0f766e" />
+                Acknowledge Receipt: #{selectedComp.complaint_id}
+              </h3>
+              <button className="btn btn-secondary" onClick={() => { setActiveModal(null); setSelectedComp(null); }}>✕</button>
+            </div>
+            <form onSubmit={handleAcknowledgeSubmit}>
+              <p style={{ fontSize: '0.86rem', color: '#475569', marginBottom: '1rem' }}>
+                Confirm receipt of this grievance by <strong>{user?.department_name || 'your department'}</strong>. The ticket will advance to <strong>ACKNOWLEDGED (40%)</strong>.
+              </p>
+              <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+                <label className="form-label">Acknowledgement Notes (Optional)</label>
+                <textarea
+                  className="form-input"
+                  rows="3"
+                  placeholder="e.g. Complaint received and queued for field team inspection."
+                  value={actionMessage}
+                  onChange={(e) => setActionMessage(e.target.value)}
+                />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => { setActiveModal(null); setSelectedComp(null); }}>Cancel</button>
+                <button type="submit" className="btn btn-primary" style={{ background: '#0f766e', borderColor: '#0f766e', fontWeight: 700 }} disabled={actionLoading}>
+                  {actionLoading ? 'Acknowledging...' : 'Confirm Acknowledgement'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Modal 1: Start Work (Stage 2 -> Stage 3) */}
       {activeModal === 'START_WORK' && selectedComp && (
@@ -595,6 +705,41 @@ export default function OfficerDashboard({ onSelectComplaint }) {
                 <button type="button" className="btn btn-secondary" onClick={() => { setActiveModal(null); setSelectedComp(null); }}>Cancel</button>
                 <button type="submit" className="btn btn-primary" style={{ background: '#16a34a', borderColor: '#16a34a', fontWeight: 700 }} disabled={actionLoading}>
                   {actionLoading ? 'Marking Resolved...' : 'Confirm Resolution'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Modal 4: Close Complaint (Stage 4 -> Stage 5) */}
+      {activeModal === 'CLOSE' && selectedComp && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
+          <div className="card" style={{ width: '520px', maxWidth: '100%', margin: 0 }}>
+            <div className="card-header">
+              <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', color: '#1e293b' }}>
+                <Lock size={18} color="#334155" />
+                Close Complaint: #{selectedComp.complaint_id}
+              </h3>
+              <button className="btn btn-secondary" onClick={() => { setActiveModal(null); setSelectedComp(null); }}>✕</button>
+            </div>
+            <form onSubmit={handleCloseSubmit}>
+              <p style={{ fontSize: '0.86rem', color: '#475569', marginBottom: '1rem' }}>
+                Formally close this grievance ticket for <strong>{selectedComp.issue_type}</strong>. The ticket will advance to <strong>CLOSED (100%)</strong> and become archived.
+              </p>
+              <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+                <label className="form-label">Closure Message / Official Archival Note (Optional)</label>
+                <textarea
+                  className="form-input"
+                  rows="4"
+                  placeholder="e.g. Field inspection complete. Road repair verified and ticket formally closed by department."
+                  value={actionMessage}
+                  onChange={(e) => setActionMessage(e.target.value)}
+                />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => { setActiveModal(null); setSelectedComp(null); }}>Cancel</button>
+                <button type="submit" className="btn btn-primary" style={{ background: '#334155', borderColor: '#334155', fontWeight: 700 }} disabled={actionLoading}>
+                  {actionLoading ? 'Closing Complaint...' : 'Confirm Closure'}
                 </button>
               </div>
             </form>

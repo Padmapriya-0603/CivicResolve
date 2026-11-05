@@ -124,19 +124,19 @@ def seed_database(clean_complaints: bool = True):
             VALUES ('priya', 'priya@gmail.com', '+91 98765 12345', ?, 'CITIZEN', NULL, 1)
         """, (hash_password("123456"),))
 
-    # 7. Seed Admin Account (admin@gmail.com / 123456)
+    # 7. Seed Admin Account (admin@gmail.com / 123456) - Phone number removed for Admin
     cursor.execute("SELECT id FROM users WHERE email = 'admin@gmail.com'")
     row = cursor.fetchone()
     if row:
         cursor.execute("""
-            UPDATE users SET name = 'Administrator', phone = '+91 99000 11000',
+            UPDATE users SET name = 'Administrator', phone = NULL,
             password_hash = ?, role = 'ADMIN', department_id = NULL, is_active = 1
             WHERE email = 'admin@gmail.com'
         """, (hash_password("123456"),))
     else:
         cursor.execute("""
             INSERT INTO users (name, email, phone, password_hash, role, department_id, is_active)
-            VALUES ('Administrator', 'admin@gmail.com', '+91 99000 11000', ?, 'ADMIN', NULL, 1)
+            VALUES ('Administrator', 'admin@gmail.com', NULL, ?, 'ADMIN', NULL, 1)
         """, (hash_password("123456"),))
 
     # Also maintain admin@grievance.local with password 123456 for convenience
@@ -144,14 +144,14 @@ def seed_database(clean_complaints: bool = True):
     row = cursor.fetchone()
     if row:
         cursor.execute("""
-            UPDATE users SET name = 'Administrator', phone = '+91 99000 11000',
+            UPDATE users SET name = 'Administrator', phone = NULL,
             password_hash = ?, role = 'ADMIN', department_id = NULL, is_active = 1
             WHERE email = 'admin@grievance.local'
         """, (hash_password("123456"),))
     else:
         cursor.execute("""
             INSERT INTO users (name, email, phone, password_hash, role, department_id, is_active)
-            VALUES ('Administrator', 'admin@grievance.local', '+91 99000 11000', ?, 'ADMIN', NULL, 1)
+            VALUES ('Administrator', 'admin@grievance.local', NULL, ?, 'ADMIN', NULL, 1)
         """, (hash_password("123456"),))
 
     # 8. Seed 5 Department Officers (Road Maintenance, Water Supply, Sanitation, Public Lighting, Drainage)
