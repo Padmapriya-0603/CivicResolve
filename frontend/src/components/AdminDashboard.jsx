@@ -539,19 +539,22 @@ export default function AdminDashboard({ onNavigate, onSelectComplaint }) {
                           <Check size={14} /> 1. Acknowledge
                         </button>
                       )}
-                      <button
-                        className="btn btn-primary"
-                        style={{
-                          fontSize: '0.8rem',
-                          padding: '0.35rem 0.65rem',
-                          background: isConflicted ? '#dc2626' : '#7c3aed',
-                          borderColor: isConflicted ? '#b91c1c' : '#7c3aed'
-                        }}
-                        onClick={() => openAcceptModal(c)}
-                        title={isConflicted ? "Resolve conflict and assign department" : "Accept complaint and notify citizen"}
-                      >
-                        <Send size={14} /> {isConflicted ? '2. Reconcile & Dispatch' : '2. Accept & Dispatch'}
-                      </button>
+                      {/* Show Reconcile & Dispatch ONLY if there is an inconsistency */}
+                      {isConflicted && (
+                        <button
+                          className="btn btn-primary"
+                          style={{
+                            fontSize: '0.8rem',
+                            padding: '0.35rem 0.65rem',
+                            background: '#dc2626',
+                            borderColor: '#b91c1c'
+                          }}
+                          onClick={() => openAcceptModal(c)}
+                          title="Resolve validation conflict and assign verified department"
+                        >
+                          <Send size={14} /> Reconcile &amp; Dispatch
+                        </button>
+                      )}
                       <button
                         className="btn btn-secondary"
                         style={{ fontSize: '0.8rem', padding: '0.35rem 0.65rem' }}
@@ -736,31 +739,42 @@ export default function AdminDashboard({ onNavigate, onSelectComplaint }) {
                                   onClick={() => openAcceptModal(c)}
                                   title="Reconcile validation conflict and assign verified department"
                                 >
-                                  [RECONCILE]
+                                  [RECONCILE &amp; DISPATCH]
                                 </button>
                               )}
                             </>
                           )}
 
-                          {/* If ACKNOWLEDGED -> Admin has routed to department, awaiting Officer */}
+                          {/* If ACKNOWLEDGED -> Reconcile & Dispatch ONLY if conflicted; otherwise awaiting Officer */}
                           {normSt === 'ACKNOWLEDGED' && (
-                            <span
-                              style={{
-                                fontSize: '0.74rem',
-                                color: '#1d4ed8',
-                                fontWeight: 600,
-                                background: '#eff6ff',
-                                padding: '0.25rem 0.5rem',
-                                borderRadius: '4px',
-                                border: '1px solid #bfdbfe',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '3px'
-                              }}
-                              title="Complaint acknowledged and routed. Awaiting Department Officer to start work."
-                            >
-                              ⏳ Awaiting Officer Start
-                            </span>
+                            isConflicted ? (
+                              <button
+                                className="btn btn-primary"
+                                style={{ fontSize: '0.75rem', padding: '0.25rem 0.55rem', background: '#dc2626', borderColor: '#b91c1c', color: '#ffffff', fontWeight: 700 }}
+                                onClick={() => openAcceptModal(c)}
+                                title="Reconcile validation conflict and assign verified department"
+                              >
+                                [RECONCILE &amp; DISPATCH]
+                              </button>
+                            ) : (
+                              <span
+                                style={{
+                                  fontSize: '0.74rem',
+                                  color: '#1d4ed8',
+                                  fontWeight: 600,
+                                  background: '#eff6ff',
+                                  padding: '0.25rem 0.5rem',
+                                  borderRadius: '4px',
+                                  border: '1px solid #bfdbfe',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '3px'
+                                }}
+                                title="Complaint acknowledged and routed. Awaiting Department Officer to start work."
+                              >
+                                ⏳ Awaiting Officer Start
+                              </span>
+                            )
                           )}
 
                           {/* If IN_PROGRESS -> Department Officer is executing field work */}
