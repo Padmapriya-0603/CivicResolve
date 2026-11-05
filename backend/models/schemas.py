@@ -400,7 +400,7 @@ class ComplaintResponse(BaseModel):
     status: str
     status_display: Optional[str] = None
     current_stage_number: Optional[int] = 1
-    progress_percent: Optional[int] = 14
+    progress_percent: Optional[int] = 20
     missing_info: List[str] = []
     conflicts: List[ConflictDetail] = []
     explanation: Optional[str] = None

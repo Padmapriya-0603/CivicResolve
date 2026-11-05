@@ -346,7 +346,7 @@ export default function CitizenDashboard({ onNavigateSubmit, onSelectComplaint }
               </thead>
               <tbody>
                 {complaints.map((c) => {
-                  const percent = c.progress_percent || 14;
+                  const percent = c.progress_percent || 20;
                   const stageNum = c.current_stage_number || 1;
                   return (
                     <tr key={c.complaint_id}>
@@ -367,7 +367,7 @@ export default function CitizenDashboard({ onNavigateSubmit, onSelectComplaint }
                       <td>{getStatusBadge(c.status)}</td>
                       <td style={{ minWidth: '120px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: 700, marginBottom: '0.2rem' }}>
-                          <span>Stage {stageNum}/7</span>
+                          <span>Stage {stageNum}/5</span>
                           <span>{percent}%</span>
                         </div>
                         <div style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
