@@ -271,14 +271,29 @@ export default function AdminDashboard({ onNavigate, onSelectComplaint }) {
   const total = stats?.total_complaints || allComplaints.length;
   const queues = stats?.queues || {};
 
-  // Conflict / Inconsistency detector
+  // Inconsistency detector: returns true ONLY when a complaint requires Administrative Review
   const hasConflict = (c) => {
     if (!c) return false;
-    if (c.conflicts && Array.isArray(c.conflicts) && c.conflicts.length > 0) return true;
-    if (typeof c.conflicts === 'string' && c.conflicts.length > 2 && c.conflicts !== '[]') return true;
-    if (c.explanation && c.explanation.includes('Validation Conflict')) return true;
-    if (c.escalation === 'ADMIN_REVIEW_REQUIRED') return true;
-    return false;
+    // 1. Explicit escalation flag set by AI agent when constraint conflicts occur
+    if (c.escalation === 'ADMIN_REVIEW_REQUIRED' || c.ai_escalation === 'ADMIN_REVIEW_REQUIRED') return true;
+    // 2. Explanation explicitly notes a validation conflict or administrative review requirement
+    if (c.explanation && (c.explanation.includes('Validation Conflict') || c.explanation.includes('administrative review') || c.explanation.includes('Administrative review'))) {
+      return true;
+    }
+    // 3. Inspect conflicts for blocking contradictions (ignore normal non-blocking rule arbitrations)
+    let confList = [];
+    if (Array.isArray(c.conflicts)) {
+      confList = c.conflicts;
+    } else if (typeof c.conflicts === 'string') {
+      try {
+        confList = JSON.parse(c.conflicts);
+      } catch (e) {
+        confList = [];
+      }
+    }
+    return confList.some(conf =>
+      conf && (conf.is_blocking === true || conf.conflict_type === 'VALIDATION_CONFLICT' || conf.conflict_type === 'DOMAIN_INCOMPATIBILITY')
+    );
   };
 
   const conflictComplaints = allComplaints.filter(hasConflict);
